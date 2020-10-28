@@ -1,0 +1,54 @@
+pipeline{
+    agent any
+    stages{
+        stage("checkout"){
+            steps{
+                echo "checkout from github"
+                git url: "https://github.com/marcoluk96/springboot.git", branch: "dev", credentialsId: "0e0c1a00-07de-49cc-8b42-939ab51fbf47"
+            }
+        }
+        stage("build"){
+            steps{
+                echo "build jar"
+                sh "cd complete/ && ./gradlew build && cd .."
+                
+                echo "build docker image"
+                script{
+                    def springbootImage = docker.build "springio/gs-spring-boot-docker:${env.BUILD_ID}"
+                }
+            }
+        }
+        stage('preamble') {
+            steps {
+                script {
+                    openshift.withCluster("minishift", "15843a70-3a21-42a4-9444-b0a145dcccbc") {
+                        try {
+                            echo "creating newProject"
+                            openshift.newProject("springboot-dev")
+                        } catch ( e ) {
+                            "newProject Error encountered: ${e}"
+                        }
+                        try {
+                            echo "creating newApp"
+                            openshift.newApp("spring-boot-dev")
+                        } catch ( e ) {
+                            "newApp Error encountered: ${e}"
+                        }
+                    }
+                }
+            }
+        }
+        stage("deploy"){
+            steps {
+                script {
+                    openshift.withCluster("minishift", "15843a70-3a21-42a4-9444-b0a145dcccbc") {
+                        openshift.withProject("springboot-dev") {
+                            def dc = openshift.selector('dc', "spring-boot-dev")
+                            dc.rollout().status()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
